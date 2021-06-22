@@ -9,17 +9,13 @@ import classnames from 'classnames';
 import { __ } from '@wordpress/i18n';
 import { useCallback, useState, useRef } from '@wordpress/element';
 import {
-	Button,
-	ButtonGroup,
 	KeyboardShortcuts,
-	PanelBody,
 	TextControl,
 	ToolbarButton,
 	Popover,
 } from '@wordpress/components';
 import {
 	BlockControls,
-	InspectorControls,
 	InspectorAdvancedControls,
 	RichText,
 	useBlockProps,
@@ -32,40 +28,12 @@ import { rawShortcut, displayShortcut } from '@wordpress/keycodes';
 import { link, linkOff } from '@wordpress/icons';
 import { createBlock } from '@wordpress/blocks';
 
+/**
+ * Internal dependencies
+ */
+import getWidthClassesAndStyles from './get-width-classes-and-styles';
+
 const NEW_TAB_REL = 'noreferrer noopener';
-
-function WidthPanel( { selectedWidth, setAttributes } ) {
-	function handleChange( newWidth ) {
-		// Check if we are toggling the width off
-		const width = selectedWidth === newWidth ? undefined : newWidth;
-
-		// Update attributes
-		setAttributes( { width } );
-	}
-
-	return (
-		<PanelBody title={ __( 'Width settings' ) }>
-			<ButtonGroup aria-label={ __( 'Button width' ) }>
-				{ [ 25, 50, 75, 100 ].map( ( widthValue ) => {
-					return (
-						<Button
-							key={ widthValue }
-							isSmall
-							variant={
-								widthValue === selectedWidth
-									? 'primary'
-									: undefined
-							}
-							onClick={ () => handleChange( widthValue ) }
-						>
-							{ widthValue }%
-						</Button>
-					);
-				} ) }
-			</ButtonGroup>
-		</PanelBody>
-	);
-}
 
 function URLPicker( {
 	isSelected,
@@ -159,14 +127,15 @@ function ButtonEdit( props ) {
 		mergeBlocks,
 	} = props;
 	const {
+		fontSize,
 		linkTarget,
 		placeholder,
 		rel,
 		style,
 		text,
 		url,
-		width,
 	} = attributes;
+
 	const onSetLinkRel = useCallback(
 		( value ) => {
 			setAttributes( { rel: value } );
@@ -201,18 +170,20 @@ function ButtonEdit( props ) {
 	const borderProps = useBorderProps( attributes );
 	const colorProps = useColorProps( attributes );
 	const spacingProps = useSpacingProps( attributes );
+	const widthProps = getWidthClassesAndStyles( attributes );
 	const ref = useRef();
-	const blockProps = useBlockProps( { ref } );
+
+	const blockProps = useBlockProps( {
+		ref,
+		className: classnames( widthProps.className, {
+			[ `has-custom-font-size` ]: fontSize || style?.typography?.fontSize,
+		} ),
+		style: widthProps.style,
+	} );
 
 	return (
 		<>
-			<div
-				{ ...blockProps }
-				className={ classnames( blockProps.className, {
-					[ `has-custom-width wp-block-button__width-${ width }` ]: width,
-					[ `has-custom-font-size` ]: blockProps.style.fontSize,
-				} ) }
-			>
+			<div { ...blockProps }>
 				<RichText
 					aria-label={ __( 'Button text' ) }
 					placeholder={ placeholder || __( 'Add text…' ) }
@@ -254,12 +225,6 @@ function ButtonEdit( props ) {
 				onToggleOpenInNewTab={ onToggleOpenInNewTab }
 				anchorRef={ ref }
 			/>
-			<InspectorControls>
-				<WidthPanel
-					selectedWidth={ width }
-					setAttributes={ setAttributes }
-				/>
-			</InspectorControls>
 			<InspectorAdvancedControls>
 				<TextControl
 					label={ __( 'Link rel' ) }
