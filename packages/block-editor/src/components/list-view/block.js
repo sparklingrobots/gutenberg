@@ -44,22 +44,19 @@ export default function ListViewBlock( {
 	showBlockMovers,
 	isExpanded,
 	animateToggleOpen,
+	setPosition,
+	moveItem,
+	dropItem,
+	listPosition,
 } ) {
 	const cellRef = useRef( null );
 	const [ isHovered, setIsHovered ] = useState( false );
 	const { clientId } = block;
-	const { isDragging, blockParents } = useSelect(
+	const { blockParents } = useSelect(
 		( select ) => {
-			const {
-				isBlockBeingDragged,
-				isAncestorBeingDragged,
-				getBlockParents,
-			} = select( blockEditorStore );
+			const { getBlockParents } = select( blockEditorStore );
 
 			return {
-				isDragging:
-					isBlockBeingDragged( clientId ) ||
-					isAncestorBeingDragged( clientId ),
 				blockParents: getBlockParents( clientId ),
 			};
 		},
@@ -82,11 +79,32 @@ export default function ListViewBlock( {
 		__experimentalPersistentListViewFeatures: withExperimentalPersistentListViewFeatures,
 		isTreeGridMounted,
 		animate,
+		draggingId,
+		setDraggingId,
+		collapse,
+		expand,
 	} = useListViewContext();
+
+	useEffect( () => {
+		setPosition( listPosition, {
+			...{
+				clientId,
+				dropContainer: block?.dropContainer ?? false,
+				dropSibling: block?.dropSibling ?? false,
+			},
+		} );
+	}, [ listPosition, draggingId ] );
+
 	const listViewBlockSettingsClassName = classnames(
 		'block-editor-list-view-block__menu-cell',
 		{ 'is-visible': isHovered }
 	);
+
+	const isFaded =
+		draggingId &&
+		draggingId !== clientId &&
+		block?.dropContainer === false &&
+		block?.dropSibling === false;
 
 	// If ListView has experimental features related to the Persistent List View,
 	// only focus the selected list item on mount; otherwise the list would always
@@ -115,11 +133,15 @@ export default function ListViewBlock( {
 
 	const onMouseEnter = () => {
 		setIsHovered( true );
-		highlightBlock( clientId, true );
+		if ( ! draggingId ) {
+			highlightBlock( clientId, true );
+		}
 	};
 	const onMouseLeave = () => {
 		setIsHovered( false );
-		highlightBlock( clientId, false );
+		if ( ! draggingId ) {
+			highlightBlock( clientId, false );
+		}
 	};
 
 	const classes = classnames( {
@@ -130,8 +152,24 @@ export default function ListViewBlock( {
 		'is-last-of-selected-branch':
 			withExperimentalPersistentListViewFeatures &&
 			isLastOfSelectedBranch,
-		'is-dragging': isDragging,
+		'is-faded': isFaded,
+		'is-moving': draggingId === clientId, //avoid is-dragging which has an !important rule
 	} );
+
+	const onDragStart = () => {
+		setDraggingId( clientId );
+		collapse( clientId );
+	};
+
+	const onDragEnd = () => {
+		expand( clientId );
+		setDraggingId( null );
+		dropItem();
+	};
+
+	const blockDrag = ( box, delta ) => {
+		moveItem( block, listPosition, delta.y );
+	};
 
 	return (
 		<TreeGridRow
@@ -148,6 +186,16 @@ export default function ListViewBlock( {
 			isExpanded={ isExpanded }
 			animate={ animate }
 			animateOnMount={ animateToggleOpen }
+			drag="y"
+			whileDrag={ { scale: 1.1 } }
+			onDragStart={ onDragStart }
+			onDragEnd={ onDragEnd }
+			onAnimationComplete={ () => {} }
+			onViewportBoxUpdate={ ( box, delta ) => {
+				if ( draggingId === clientId ) {
+					blockDrag( box, delta );
+				}
+			} }
 		>
 			<TreeGridCell
 				className="block-editor-list-view-block__contents-cell"

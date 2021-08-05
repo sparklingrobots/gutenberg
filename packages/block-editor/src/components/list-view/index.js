@@ -1,4 +1,9 @@
 /**
+ * External dependencies
+ */
+import { clone } from 'lodash';
+
+/**
  * WordPress dependencies
  */
 
@@ -11,6 +16,7 @@ import {
 	useMemo,
 	useRef,
 	useReducer,
+	useState,
 } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
@@ -19,9 +25,7 @@ import { __ } from '@wordpress/i18n';
  */
 import ListViewBranch from './branch';
 import { ListViewContext } from './context';
-import ListViewDropIndicator from './drop-indicator';
 import useListViewClientIds from './use-list-view-client-ids';
-import useListViewDropZone from './use-list-view-drop-zone';
 import { store as blockEditorStore } from '../../store';
 
 const noop = () => {};
@@ -36,18 +40,90 @@ const expanded = ( state, action ) => {
 	}
 };
 
+function findCurrentPosition( tree, id, parentId = '' ) {
+	for ( let index = 0; index < tree.length; index++ ) {
+		const block = tree[ index ];
+		if ( block.clientId === id ) {
+			return { parentId, index, block, tree };
+		}
+		if ( block.innerBlocks && block.innerBlocks.length > 0 ) {
+			const match = findCurrentPosition(
+				block.innerBlocks,
+				id,
+				block.clientId
+			);
+			if ( match ) {
+				return match;
+			}
+		}
+	}
+	return false;
+}
+
+function removeItemFromTree( tree, id ) {
+	const newTree = [];
+	for ( let index = 0; index < tree.length; index++ ) {
+		const block = tree[ index ];
+		if ( block.clientId !== id ) {
+			if ( block.innerBlocks.length > 0 ) {
+				newTree.push( {
+					...block,
+					innerBlocks: removeItemFromTree( block.innerBlocks, id ),
+				} );
+			} else {
+				newTree.push( { ...block } );
+			}
+		}
+	}
+	return newTree;
+}
+
+function addItemToTree( tree, id, item, insertAfter = true ) {
+	const newTree = [];
+	for ( let index = 0; index < tree.length; index++ ) {
+		const block = tree[ index ];
+		if ( block.clientId === id ) {
+			if ( insertAfter ) {
+				newTree.push( { ...block } );
+				newTree.push( { ...item } );
+			} else {
+				newTree.push( { ...item } );
+				newTree.push( { ...block } );
+			}
+		} else if ( block.clientId !== id ) {
+			if ( block.innerBlocks.length > 0 ) {
+				newTree.push( {
+					...block,
+					innerBlocks: addItemToTree(
+						block.innerBlocks,
+						id,
+						item,
+						insertAfter
+					),
+				} );
+			} else {
+				newTree.push( { ...block } );
+			}
+		}
+	}
+	return newTree;
+}
+
 /**
  * Wrap `ListViewRows` with `TreeGrid`. ListViewRows is a
  * recursive component (it renders itself), so this ensures TreeGrid is only
  * present at the very top of the navigation grid.
  *
  * @param {Object}   props                                          Components props.
- * @param {Array}    props.blocks                                   Custom subset of block client IDs to be used instead of the default hierarchy.
+ * @param {Array}    props.blocks                                   Custom subset of block client IDs to be used
+ *                                                                  instead of the default hierarchy.
  * @param {Function} props.onSelect                                 Block selection callback.
  * @param {boolean}  props.showNestedBlocks                         Flag to enable displaying nested blocks.
- * @param {boolean}  props.showOnlyCurrentHierarchy                 Flag to limit the list to the current hierarchy of blocks.
+ * @param {boolean}  props.showOnlyCurrentHierarchy                 Flag to limit the list to the current hierarchy of
+ *                                                                  blocks.
  * @param {boolean}  props.__experimentalFeatures                   Flag to enable experimental features.
- * @param {boolean}  props.__experimentalPersistentListViewFeatures Flag to enable features for the Persistent List View experiment.
+ * @param {boolean}  props.__experimentalPersistentListViewFeatures Flag to enable features for the Persistent List
+ *                                                                  View experiment.
  */
 export default function ListView( {
 	blocks,
@@ -57,12 +133,18 @@ export default function ListView( {
 	__experimentalPersistentListViewFeatures,
 	...props
 } ) {
+	const [ draggingId, setDraggingId ] = useState( false );
+	const [ dropped, setDropped ] = useState( false );
 	const { clientIdsTree, selectedClientIds } = useListViewClientIds(
 		blocks,
 		showOnlyCurrentHierarchy,
-		__experimentalPersistentListViewFeatures
+		__experimentalPersistentListViewFeatures,
+		draggingId
 	);
-	const { selectBlock } = useDispatch( blockEditorStore );
+	const [ tree, setTree ] = useState( clientIdsTree );
+	const { selectBlock, moveBlocksToPosition } = useDispatch(
+		blockEditorStore
+	);
 	const selectEditorBlock = useCallback(
 		( clientId ) => {
 			selectBlock( clientId );
@@ -72,9 +154,9 @@ export default function ListView( {
 	);
 	const [ expandedState, setExpandedState ] = useReducer( expanded, {} );
 
-	const { ref: dropZoneRef, target: blockDropTarget } = useListViewDropZone();
 	const elementRef = useRef();
-	const treeGridRef = useMergeRefs( [ elementRef, dropZoneRef ] );
+	const timeoutRef = useRef();
+	const treeGridRef = useMergeRefs( [ elementRef, timeoutRef ] );
 
 	const isMounted = useRef( false );
 	useEffect( () => {
@@ -102,6 +184,70 @@ export default function ListView( {
 
 	const animate = ! useReducedMotion();
 
+	const positionsRef = useRef( {} );
+	const positions = positionsRef.current;
+	const setPosition = ( clientId, offset ) =>
+		( positions[ clientId ] = offset );
+
+	const lastTarget = useRef( null );
+	useEffect( () => {
+		lastTarget.current = null;
+	}, [] );
+
+	const dropItem = () => {
+		if ( ! lastTarget.current ) {
+			return;
+		}
+		const targetId = lastTarget.current.targetPosition.clientId;
+		const clientId = lastTarget.current.clientId;
+		const target = findCurrentPosition( clientIdsTree, targetId );
+		const current = findCurrentPosition(
+			clientIdsTree,
+			lastTarget.clientId
+		);
+		setDropped( true );
+		moveBlocksToPosition(
+			[ clientId ],
+			current.parentId,
+			target.parentId,
+			target.index
+		);
+		lastTarget.current = null;
+		//TODO: see if waiting for the state update hides unecessary layout changes.
+		timeoutRef.current = setTimeout( () => {
+			setDropped( false );
+		}, 200 );
+	};
+
+	const moveItem = ( block, listPosition, { translate } ) => {
+		//TODO: support add to container
+		//TODO: support add to child container
+		//TODO: simplify state and code
+		const { clientId } = block;
+		const ITEM_HEIGHT = 36;
+
+		if ( Math.abs( translate ) > ITEM_HEIGHT / 2 ) {
+			const movingDown = translate > 0;
+			const targetPosition = movingDown
+				? positions[ listPosition + 1 ]
+				: positions[ listPosition - 1 ];
+			if ( targetPosition === undefined ) {
+				return;
+			}
+			lastTarget.current = {
+				clientId,
+				targetPosition,
+			};
+			const newTree = addItemToTree(
+				removeItemFromTree( clientIdsTree, clientId ),
+				targetPosition.clientId,
+				block,
+				movingDown
+			);
+			setTree( newTree );
+		}
+	};
+
 	const contextValue = useMemo(
 		() => ( {
 			__experimentalFeatures,
@@ -111,6 +257,8 @@ export default function ListView( {
 			expand,
 			collapse,
 			animate,
+			draggingId,
+			setDraggingId,
 		} ),
 		[
 			__experimentalFeatures,
@@ -120,15 +268,27 @@ export default function ListView( {
 			expand,
 			collapse,
 			animate,
+			draggingId,
+			setDraggingId,
 		]
 	);
 
+	//TODO: mouseover on items highlights blocks and triggers a render check on all branches
+	//TODO: used in prototyping, polish this more
+	useEffect( () => {
+		if ( draggingId ) {
+			setTree( clone( clientIdsTree ) );
+		}
+	}, [ draggingId ] );
+
+	useEffect( () => {
+		if ( timeoutRef.current ) {
+			clearTimeout( timeoutRef.current );
+		}
+	}, [] );
+
 	return (
 		<>
-			<ListViewDropIndicator
-				listViewRef={ elementRef }
-				blockDropTarget={ blockDropTarget }
-			/>
 			<TreeGrid
 				className="block-editor-list-view-tree"
 				aria-label={ __( 'Block navigation structure' ) }
@@ -139,9 +299,12 @@ export default function ListView( {
 			>
 				<ListViewContext.Provider value={ contextValue }>
 					<ListViewBranch
-						blocks={ clientIdsTree }
+						blocks={ draggingId || dropped ? tree : clientIdsTree }
 						selectBlock={ selectEditorBlock }
 						selectedBlockClientIds={ selectedClientIds }
+						setPosition={ setPosition }
+						moveItem={ moveItem }
+						dropItem={ dropItem }
 						{ ...props }
 					/>
 				</ListViewContext.Provider>
