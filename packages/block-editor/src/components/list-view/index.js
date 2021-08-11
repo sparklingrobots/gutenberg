@@ -109,6 +109,21 @@ function addItemToTree( tree, id, item, insertAfter = true ) {
 	return newTree;
 }
 
+function findFirstValidPosition( positions, current, translate, moveDown ) {
+	const ITEM_HEIGHT = 36;
+	const iterate = moveDown ? 1 : -1;
+	let index = current + iterate;
+	let diff = Math.abs( translate );
+	while ( positions[ index ] !== undefined && diff > ITEM_HEIGHT / 2 ) {
+		const position = positions[ index ];
+		if ( position.dropContainer || position.dropSibling ) {
+			return position;
+		}
+		index += iterate;
+		diff = diff - ITEM_HEIGHT;
+	}
+}
+
 /**
  * Wrap `ListViewRows` with `TreeGrid`. ListViewRows is a
  * recursive component (it renders itself), so this ensures TreeGrid is only
@@ -226,29 +241,28 @@ export default function ListView( {
 		//TODO: support add to child container
 		//TODO: simplify state and code
 		const { clientId } = block;
-		const ITEM_HEIGHT = 36;
-
-		if ( Math.abs( translate ) > ITEM_HEIGHT / 2 ) {
-			const movingDown = translate > 0;
-			const targetPosition = movingDown
-				? positions[ listPosition + 1 ]
-				: positions[ listPosition - 1 ];
-			if ( targetPosition === undefined ) {
-				return;
-			}
-			lastTarget.current = {
-				clientId,
-				targetPosition,
-				movingDown,
-			};
-			const newTree = addItemToTree(
-				removeItemFromTree( clientIdsTree, clientId ),
-				targetPosition.clientId,
-				block,
-				movingDown
-			);
-			setTree( newTree );
+		const movingDown = translate > 0;
+		const targetPosition = findFirstValidPosition(
+			positions,
+			listPosition,
+			translate,
+			movingDown
+		);
+		if ( targetPosition === undefined ) {
+			return;
 		}
+		lastTarget.current = {
+			clientId,
+			targetPosition,
+			movingDown,
+		};
+		const newTree = addItemToTree(
+			removeItemFromTree( clientIdsTree, clientId ),
+			targetPosition.clientId,
+			block,
+			movingDown
+		);
+		setTree( newTree );
 	};
 
 	const contextValue = useMemo(
