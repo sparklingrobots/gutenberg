@@ -198,19 +198,21 @@ export default function ListView( {
 		if ( ! lastTarget.current ) {
 			return;
 		}
-		const targetId = lastTarget.current.targetPosition.clientId;
-		const clientId = lastTarget.current.clientId;
-		const target = findCurrentPosition( clientIdsTree, targetId );
-		const current = findCurrentPosition(
-			clientIdsTree,
-			lastTarget.clientId
+		const { targetPosition, clientId, movingDown } = lastTarget.current;
+		const targetId = targetPosition.clientId;
+		const target = findCurrentPosition(
+			removeItemFromTree( clientIdsTree, clientId ),
+			targetId
 		);
+		const current = findCurrentPosition( clientIdsTree, clientId );
+
+		const targetIndex = movingDown ? target.index + 1 : target.index;
 		setDropped( true );
 		moveBlocksToPosition(
 			[ clientId ],
 			current.parentId,
 			target.parentId,
-			target.index
+			targetIndex
 		);
 		lastTarget.current = null;
 		//TODO: see if waiting for the state update hides unecessary layout changes.
@@ -237,6 +239,7 @@ export default function ListView( {
 			lastTarget.current = {
 				clientId,
 				targetPosition,
+				movingDown,
 			};
 			const newTree = addItemToTree(
 				removeItemFromTree( clientIdsTree, clientId ),
