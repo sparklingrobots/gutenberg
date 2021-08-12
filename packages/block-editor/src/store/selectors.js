@@ -2231,6 +2231,38 @@ export const __experimentalGetActiveBlockIdByBlockNames = createSelector(
 );
 
 /**
+ * Flat representation of blocks. This is useful when rendering the list view.
+ */
+export const __experimentalGetFlatList = createSelector(
+	( state, withoutIds = [], parentId = '', level = 0 ) => {
+		let skipModifier = 0;
+		return getBlockOrder( state, parentId ).reduce(
+			( list, clientId, index ) => {
+				if ( withoutIds.indexOf( clientId ) !== -1 ) {
+					skipModifier++;
+					return list;
+				}
+				return list.concat( [
+					{ clientId, level, parentId, index: index - skipModifier },
+					...__experimentalGetFlatList(
+						state,
+						withoutIds,
+						clientId,
+						level + 1
+					),
+				] );
+			},
+			[]
+		);
+	},
+	( state, parentId, withoutIds ) => [
+		state.blocks.order,
+		parentId,
+		withoutIds,
+	]
+);
+
+/**
  * Tells if the block with the passed clientId was just inserted.
  *
  * @param {Object}  state    Global application state.
