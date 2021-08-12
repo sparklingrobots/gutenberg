@@ -679,9 +679,11 @@ async function getChangelog( settings ) {
 				return;
 			}
 
+			const isNested = featureName !== 'Documentation';
+
 			// Avoids double nesting such as "Documentation" feature under
 			// the "Documentation" section.
-			if ( group !== featureName ) {
+			if ( group !== featureName && isNested ) {
 				// Start new <ul> for the Feature group.
 				changelog += '- ' + featureName + '\n';
 			}
@@ -692,7 +694,7 @@ async function getChangelog( settings ) {
 				entry = entry && entry.replace( `[${ featureName } - `, '[' );
 
 				// Add a new bullet point to the list.
-				changelog += `  ${ entry }\n`;
+				changelog += isNested ? `  ${ entry }\n` : `${ entry }\n`;
 			} );
 
 			// Close the <ul> for the Feature group.
