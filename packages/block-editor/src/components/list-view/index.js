@@ -109,7 +109,9 @@ function addItemToTree( tree, id, item, insertAfter = true ) {
 	return newTree;
 }
 
+// eslint-disable-next-line no-unused-vars
 function findFirstValidPosition( positions, current, translate, moveDown ) {
+	//TODO: this works, but after skipping an item translate can no longer be used to indicate drag direction.
 	const ITEM_HEIGHT = 36;
 	const iterate = moveDown ? 1 : -1;
 	let index = current + iterate;
@@ -230,7 +232,11 @@ export default function ListView( {
 			targetIndex
 		);
 		lastTarget.current = null;
-		//TODO: see if waiting for the state update hides unecessary layout changes.
+		// TODO:
+		// - use cached representation while list view has focus (maybe after the first drag)
+		// - cache removal of the dragged item in tree
+		// - try storing parent positions on setPositions
+		// - see what performance of a flat representation looks like
 		timeoutRef.current = setTimeout( () => {
 			setDropped( false );
 		}, 200 );
@@ -241,28 +247,30 @@ export default function ListView( {
 		//TODO: support add to child container
 		//TODO: simplify state and code
 		const { clientId } = block;
-		const movingDown = translate > 0;
-		const targetPosition = findFirstValidPosition(
-			positions,
-			listPosition,
-			translate,
-			movingDown
-		);
-		if ( targetPosition === undefined ) {
-			return;
+		const ITEM_HEIGHT = 36;
+
+		if ( Math.abs( translate ) > ITEM_HEIGHT / 2 ) {
+			const movingDown = translate > 0;
+			const targetPosition = movingDown
+				? positions[ listPosition + 1 ]
+				: positions[ listPosition - 1 ];
+
+			if ( targetPosition === undefined ) {
+				return;
+			}
+			lastTarget.current = {
+				clientId,
+				targetPosition,
+				movingDown,
+			};
+			const newTree = addItemToTree(
+				removeItemFromTree( clientIdsTree, clientId ),
+				targetPosition.clientId,
+				block,
+				movingDown
+			);
+			setTree( newTree );
 		}
-		lastTarget.current = {
-			clientId,
-			targetPosition,
-			movingDown,
-		};
-		const newTree = addItemToTree(
-			removeItemFromTree( clientIdsTree, clientId ),
-			targetPosition.clientId,
-			block,
-			movingDown
-		);
-		setTree( newTree );
 	};
 
 	const contextValue = useMemo(

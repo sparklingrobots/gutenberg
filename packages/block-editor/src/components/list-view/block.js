@@ -168,7 +168,9 @@ export default function ListViewBlock( {
 	};
 
 	const blockDrag = ( box, delta ) => {
-		moveItem( block, listPosition, delta.y );
+		if ( draggingId === clientId ) {
+			moveItem( block, listPosition, delta.y );
+		}
 	};
 
 	return (
@@ -190,12 +192,7 @@ export default function ListViewBlock( {
 			whileDrag={ { scale: 1.1 } }
 			onDragStart={ onDragStart }
 			onDragEnd={ onDragEnd }
-			onAnimationComplete={ () => {} }
-			onViewportBoxUpdate={ ( box, delta ) => {
-				if ( draggingId === clientId ) {
-					blockDrag( box, delta );
-				}
-			} }
+			onViewportBoxUpdate={ blockDrag }
 		>
 			<TreeGridCell
 				className="block-editor-list-view-block__contents-cell"
