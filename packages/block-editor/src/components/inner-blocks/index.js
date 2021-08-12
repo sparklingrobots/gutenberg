@@ -9,7 +9,11 @@ import classnames from 'classnames';
 import { useViewportMatch, useMergeRefs } from '@wordpress/compose';
 import { forwardRef } from '@wordpress/element';
 import { useSelect } from '@wordpress/data';
-import { getBlockType, withBlockContentContext } from '@wordpress/blocks';
+import {
+	getBlockType,
+	store as blocksStore,
+	withBlockContentContext,
+} from '@wordpress/blocks';
 
 /**
  * Internal dependencies
@@ -137,7 +141,7 @@ const ForwardedInnerBlocks = forwardRef( ( props, ref ) => {
 export function useInnerBlocksProps( props = {}, options = {} ) {
 	const { clientId } = useBlockEditContext();
 	const isSmallScreen = useViewportMatch( 'medium', '<' );
-	const hasOverlay = useSelect(
+	const { __experimentalCaptureToolbars, hasOverlay } = useSelect(
 		( select ) => {
 			const {
 				getBlockName,
@@ -145,13 +149,22 @@ export function useInnerBlocksProps( props = {}, options = {} ) {
 				hasSelectedInnerBlock,
 				isNavigationMode,
 			} = select( blockEditorStore );
+			const blockName = getBlockName( clientId );
 			const enableClickThrough = isNavigationMode() || isSmallScreen;
-			return (
-				getBlockName( clientId ) !== 'core/template' &&
-				! isBlockSelected( clientId ) &&
-				! hasSelectedInnerBlock( clientId, true ) &&
-				enableClickThrough
-			);
+			return {
+				__experimentalCaptureToolbars: select(
+					blocksStore
+				).hasBlockSupport(
+					blockName,
+					'__experimentalCaptureToolbars',
+					false
+				),
+				hasOverlay:
+					blockName !== 'core/template' &&
+					! isBlockSelected( clientId ) &&
+					! hasSelectedInnerBlock( clientId, true ) &&
+					enableClickThrough,
+			};
 		},
 		[ clientId, isSmallScreen ]
 	);
@@ -162,11 +175,15 @@ export function useInnerBlocksProps( props = {}, options = {} ) {
 			rootClientId: clientId,
 		} ),
 	] );
+	const innerBlocksProps = {
+		__experimentalCaptureToolbars,
+		...options,
+	};
+
 	const InnerBlocks =
-		options.value && options.onChange
+		innerBlocksProps.value && innerBlocksProps.onChange
 			? ControlledInnerBlocks
 			: UncontrolledInnerBlocks;
-
 	return {
 		...props,
 		ref,
@@ -177,7 +194,7 @@ export function useInnerBlocksProps( props = {}, options = {} ) {
 				'has-overlay': hasOverlay,
 			}
 		),
-		children: <InnerBlocks { ...options } clientId={ clientId } />,
+		children: <InnerBlocks { ...innerBlocksProps } clientId={ clientId } />,
 	};
 }
 
